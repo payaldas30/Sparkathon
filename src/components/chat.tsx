@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from "next/navigation";
-import { Menu, X, MessageSquarePlus, LogOut, Bot, Trash2, Send, User, Loader2 } from 'lucide-react';
+import { Menu, X, MessageSquarePlus, LogOut, Bot, Trash2, Send, User, Loader2, Mic, MicOff } from 'lucide-react';
 import UserButton from './user-button';
 
 type Message = {
@@ -26,7 +26,42 @@ export default function SimpleChatbot() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isOpen, setIsOpen] = useState(false);
   const [chatHistory, setChatHistory] = useState<ChatHistoryItem[]>([]);
+  const [isListening, setIsListening] = useState<boolean>(false);
+  const [speechSupported, setSpeechSupported] = useState<boolean>(false);
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<any>(null);
+
+  // Initialize speech recognition
+  useEffect(() => {
+    if (typeof window !== 'undefined' && ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+      setSpeechSupported(true);
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      recognitionRef.current = new SpeechRecognition();
+      
+      recognitionRef.current.continuous = false;
+      recognitionRef.current.interimResults = false;
+      recognitionRef.current.lang = 'en-US';
+
+      recognitionRef.current.onstart = () => {
+        setIsListening(true);
+      };
+
+      recognitionRef.current.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setInputValue(transcript);
+        setIsListening(false);
+      };
+
+      recognitionRef.current.onerror = (event: any) => {
+        console.error('Speech recognition error:', event.error);
+        setIsListening(false);
+      };
+    }
+  }, []);
 
   // Initialize with welcome message (for both authenticated and unauthenticated users)
   useEffect(() => {
@@ -34,7 +69,7 @@ export default function SimpleChatbot() {
       const welcomeName = session?.user?.name || 'there';
       setMessages([{
         id: generateId(),
-        text: `Hello ${welcomeName}! I'm your AI assistant. How can I help you today?`,
+        text: `Hello ${welcomeName}! I'm your AI assistant. How can I help you today? You can type your message or use the microphone to speak!`,
         sender: 'bot',
         timestamp: new Date()
       }]);
@@ -83,7 +118,7 @@ export default function SimpleChatbot() {
     // Clear current chat
     setMessages([{
       id: generateId(),
-      text: `Hello ${session?.user?.name || 'there'}! I'm your AI assistant. How can I help you today?`,
+      text: `Hello ${session?.user?.name || 'there'}! I'm your AI assistant. How can I help you today? You can type your message or use the microphone to speak!`,
       sender: 'bot',
       timestamp: new Date()
     }]);
@@ -119,6 +154,36 @@ export default function SimpleChatbot() {
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  // Voice recognition functions
+  const startListening = () => {
+    if (status === 'unauthenticated') {
+      router.push('/sign-up');
+      return;
+    }
+
+    if (recognitionRef.current && speechSupported) {
+      try {
+        recognitionRef.current.start();
+      } catch (error) {
+        console.error('Error starting speech recognition:', error);
+      }
+    }
+  };
+
+  const stopListening = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+  };
+
+  const toggleListening = () => {
+    if (isListening) {
+      stopListening();
+    } else {
+      startListening();
+    }
   };
 
   // Simulate bot response
@@ -356,6 +421,12 @@ export default function SimpleChatbot() {
             <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
             <span className="text-sm text-green-400">Online</span>
           </div>
+          {/* Show speech recognition status */}
+          {speechSupported && isAuthenticated && (
+            <div className="mt-2 text-xs text-gray-500">
+             
+            </div>
+          )}
           {/* Show sign-in prompt for unauthenticated users */}
           {!isAuthenticated && (
             <div className="mt-4 p-4 bg-blue-900/30 border border-blue-500/50 rounded-lg">
@@ -455,6 +526,27 @@ export default function SimpleChatbot() {
               onFocus={handleInputFocus}
               disabled={isLoading}
             />
+            
+            {/* Voice input button */}
+            {speechSupported && isAuthenticated && (
+              <button
+                onClick={toggleListening}
+                disabled={isLoading}
+                className={`p-3 rounded-full transition-all ${
+                  isListening
+                    ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse'
+                    : 'bg-gray-600 hover:bg-gray-500 text-gray-300'
+                } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                title={isListening ? 'Stop listening' : 'Click to speak'}
+              >
+                {isListening ? (
+                  <MicOff className="w-5 h-5" />
+                ) : (
+                  <Mic className="w-5 h-5" />
+                )}
+              </button>
+            )}
+
             <button 
               onClick={handleSendMessage}
               disabled={!inputValue.trim() || isLoading || !isAuthenticated}
@@ -467,6 +559,16 @@ export default function SimpleChatbot() {
               <Send className="w-5 h-5" />
             </button>
           </div>
+          
+          {/* Voice status indicator */}
+          {isListening && (
+            <div className="mt-2 flex items-center justify-center">
+              <div className="flex items-center space-x-2 text-red-400">
+                <div className="w-2 h-2 bg-red-400 rounded-full animate-pulse"></div>
+                <span className="text-sm">Listening... Speak now</span>
+              </div>
+            </div>
+          )}
         </div>
       </main>
     </div>
