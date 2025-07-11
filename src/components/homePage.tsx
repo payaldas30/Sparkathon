@@ -91,26 +91,26 @@ export default function WallbotWelcome() {
         {/* Subtitle */}
         <div className={`text-center mb-12 transform transition-all duration-1000 delay-500 ${isVisible ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`}>
           <p className="text-xl md:text-2xl text-gray-300 max-w-2xl mx-auto leading-relaxed">
-            Your intelligent companion for dynamic wallpapers and smart automation
+            The Intelligent Shopping Assistant offers smart, personalized shopping with real-time comparisons.
           </p>
         </div>
 
         {/* Features */}
-        <div className={`grid grid-cols-1 md:grid-cols-3 gap-6 mb-12 transform transition-all duration-1000 delay-700 ${isVisible ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`}>
+        <div className={`grid grid-cols-1 md:grid-cols-3 gap-10 mb-12 transform transition-all duration-1000 delay-700 ${isVisible ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`}>
           <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 text-center hover:bg-white/20 transition-all duration-300 transform hover:scale-105">
             <Zap className="w-8 h-8 text-yellow-400 mx-auto mb-3" />
             <h3 className="text-white font-semibold mb-2">Smart AI</h3>
-            <p className="text-gray-300 text-sm">Intelligent wallpaper recommendations</p>
+            <p className="text-gray-300 text-sm">AI assistant for smarter shopping.</p>
           </div>
           <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 text-center hover:bg-white/20 transition-all duration-300 transform hover:scale-105">
             <Sparkles className="w-8 h-8 text-purple-400 mx-auto mb-3" />
-            <h3 className="text-white font-semibold mb-2">Dynamic</h3>
-            <p className="text-gray-300 text-sm">Automatically changing backgrounds</p>
+            <h3 className="text-white font-semibold mb-2">Insightful</h3>
+            <p className="text-gray-300 text-sm">Explains choices using real reviews.</p>
           </div>
           <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 text-center hover:bg-white/20 transition-all duration-300 transform hover:scale-105">
             <Bot className="w-8 h-8 text-blue-400 mx-auto mb-3" />
-            <h3 className="text-white font-semibold mb-2">Automated</h3>
-            <p className="text-gray-300 text-sm">Set and forget functionality</p>
+            <h3 className="text-white font-semibold mb-2">Secure</h3>
+            <p className="text-gray-300 text-sm">Blocks bots, no CAPTCHAs.</p>
           </div>
         </div>
 
