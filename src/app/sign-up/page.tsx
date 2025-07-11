@@ -67,7 +67,7 @@ const SignUp = () => {
     signIn(value, { callbackUrl: "/" });
   };
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-900 via-blue-500 to-indigo-900 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-purple-800 to-black p-4">
 <Card className="relative w-full max-w-md bg-white/95 backdrop-blur-xl border-0 shadow-2xl">
         <CardHeader className="relative text-center space-y-2 pb-8">
           
