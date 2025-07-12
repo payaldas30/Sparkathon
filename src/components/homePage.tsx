@@ -34,7 +34,7 @@ export default function WallbotWelcome() {
   };
 
   return (
-    <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-gray-900 via-purple-800 to-black">
+    <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-gray-900  to-black">
       {/* Animated Background */}
       <div className="absolute inset-0 opacity-30">
         <div className="absolute inset-0 bg-gradient-to-br from-purple-900/20 via-blue-900/20 to-indigo-900/20"></div>

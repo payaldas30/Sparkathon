@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useSession, signOut, SessionProvider } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import {
   Menu,
   X,
@@ -10,7 +11,6 @@ import {
   Bot,
   Trash2,
   Send,
-  User,
   Loader2,
   Mic,
   MicOff,
@@ -34,6 +34,133 @@ type ChatHistoryItem = {
   messages: Message[];
 };
 
+// Types for serialized data
+type SerializedMessage = {
+  id: string;
+  text: string;
+  sender: "user" | "bot";
+  timestamp: string;
+  products?: Product[];
+};
+
+type SerializedChatHistoryItem = {
+  id: string;
+  title: string;
+  timestamp: string;
+  messages: SerializedMessage[];
+};
+
+type SerializedCurrentChat = {
+  id: string;
+  messages: SerializedMessage[];
+  timestamp: string;
+};
+
+// Speech Recognition types
+interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+}
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start(): void;
+  stop(): void;
+  onstart: ((this: SpeechRecognition, ev: Event) => void) | null;
+  onend: ((this: SpeechRecognition, ev: Event) => void) | null;
+  onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => void) | null;
+  onerror: ((this: SpeechRecognition, ev: SpeechRecognitionErrorEvent) => void) | null;
+}
+
+declare global {
+  interface Window {
+    SpeechRecognition?: {
+      new (): SpeechRecognition;
+    };
+    webkitSpeechRecognition?: {
+      new (): SpeechRecognition;
+    };
+  }
+}
+
+// localStorage utility functions
+const STORAGE_KEYS = {
+  CURRENT_CHAT: 'chatbot_current_chat',
+  CHAT_HISTORY: 'chatbot_chat_history',
+};
+
+const saveToLocalStorage = (key: string, data: unknown) => {
+  try {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(key, JSON.stringify(data));
+    }
+  } catch (error) {
+    console.error('Error saving to localStorage:', error);
+  }
+};
+
+const loadFromLocalStorage = (key: string): unknown => {
+  try {
+    if (typeof window !== 'undefined') {
+      const item = localStorage.getItem(key);
+      return item ? JSON.parse(item) : null;
+    }
+  } catch (error) {
+    console.error('Error loading from localStorage:', error);
+    return null;
+  }
+  return null;
+};
+
+const clearFromLocalStorage = (key: string) => {
+  try {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(key);
+    }
+  } catch (error) {
+    console.error('Error clearing localStorage:', error);
+  }
+};
+
+// Helper function to serialize messages (convert Date objects to strings)
+const serializeMessages = (messages: Message[]): SerializedMessage[] => {
+  return messages.map(msg => ({
+    ...msg,
+    timestamp: msg.timestamp.toISOString(),
+  }));
+};
+
+// Helper function to deserialize messages (convert string dates back to Date objects)
+const deserializeMessages = (messages: SerializedMessage[]): Message[] => {
+  return messages.map(msg => ({
+    ...msg,
+    timestamp: new Date(msg.timestamp),
+  }));
+};
+
+// Helper function to serialize chat history
+const serializeChatHistory = (chatHistory: ChatHistoryItem[]): SerializedChatHistoryItem[] => {
+  return chatHistory.map(chat => ({
+    ...chat,
+    timestamp: chat.timestamp.toISOString(),
+    messages: serializeMessages(chat.messages),
+  }));
+};
+
+// Helper function to deserialize chat history
+const deserializeChatHistory = (chatHistory: SerializedChatHistoryItem[]): ChatHistoryItem[] => {
+  return chatHistory.map(chat => ({
+    ...chat,
+    timestamp: new Date(chat.timestamp),
+    messages: deserializeMessages(chat.messages),
+  }));
+};
+
 function ChatbotContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -44,60 +171,181 @@ function ChatbotContent() {
   const [chatHistory, setChatHistory] = useState<ChatHistoryItem[]>([]);
   const [isListening, setIsListening] = useState<boolean>(false);
   const [speechSupported, setSpeechSupported] = useState<boolean>(false);
+  const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  
 
   // Initialize speech recognition
-  useEffect(() => {
-    if (
-      typeof window !== "undefined" &&
-      ("webkitSpeechRecognition" in window || "SpeechRecognition" in window)
-    ) {
-      setSpeechSupported(true);
-      const SpeechRecognition =
-        (window as any).SpeechRecognition ||
-        (window as any).webkitSpeechRecognition;
-      recognitionRef.current = new SpeechRecognition();
+  // useEffect(() => {
+  //   if (
+  //     typeof window !== "undefined" &&
+  //     (window.webkitSpeechRecognition || window.SpeechRecognition)
+  //   ) {
+  //     setSpeechSupported(true);
+  //     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  //     recognitionRef.current = new SpeechRecognition();
 
-      recognitionRef.current.continuous = false;
-      recognitionRef.current.interimResults = false;
-      recognitionRef.current.lang = "en-US";
+  //     recognitionRef.current.continuous = false;
+  //     recognitionRef.current.interimResults = false;
+  //     recognitionRef.current.lang = "en-US";
 
-      recognitionRef.current.onstart = () => {
-        setIsListening(true);
-      };
+  //     recognitionRef.current.onstart = () => {
+  //       setIsListening(true);
+  //     };
 
-      recognitionRef.current.onend = () => {
-        setIsListening(false);
-      };
+  //     recognitionRef.current.onend = () => {
+  //       setIsListening(false);
+  //     };
 
-      recognitionRef.current.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        setInputValue(transcript);
-        setIsListening(false);
-      };
+  //     recognitionRef.current.onresult = (event: SpeechRecognitionEvent) => {
+  //       const transcript = event.results[0][0].transcript;
+  //       setInputValue(transcript);
+  //       setIsListening(false);
+  //     };
 
-      recognitionRef.current.onerror = (event: any) => {
-        console.error("Speech recognition error:", event.error);
-        setIsListening(false);
-      };
+  //     recognitionRef.current.onerror = (event: SpeechRecognitionErrorEvent) => {
+  //       console.error("Speech recognition error:", event.error);
+  //       setIsListening(false);
+  //     };
+  //   }
+  // }, []);
+//   // Initialize speech recognition
+// useEffect(() => {
+//   if (typeof window !== "undefined") {
+//     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    
+//     if (SpeechRecognition) {
+//       setSpeechSupported(true);
+//       recognitionRef.current = new SpeechRecognition();
+
+//       recognitionRef.current.continuous = false;
+//       recognitionRef.current.interimResults = false;
+//       recognitionRef.current.lang = "en-US";
+
+//       recognitionRef.current.onstart = () => {
+//         setIsListening(true);
+//       };
+
+//       recognitionRef.current.onend = () => {
+//         setIsListening(false);
+//       };
+
+//       recognitionRef.current.onresult = (event: SpeechRecognitionEvent) => {
+//         const transcript = event.results[0][0].transcript;
+//         setInputValue(transcript);
+//         setIsListening(false);
+//       };
+
+//       recognitionRef.current.onerror = (event: SpeechRecognitionErrorEvent) => {
+//         console.error("Speech recognition error:", event.error);
+//         setIsListening(false);
+//       };
+//     }
+//   }
+// }, []);
+// Initialize speech recognition
+useEffect(() => {
+  if (typeof window !== "undefined") {
+    const SpeechRecognitionConstructor = window.SpeechRecognition || window.webkitSpeechRecognition;
+    
+    if (SpeechRecognitionConstructor) {
+      try {
+        setSpeechSupported(true);
+        // Type assertion to tell TypeScript we know this is defined
+        const recognition = new (SpeechRecognitionConstructor as new () => SpeechRecognition)();
+        recognitionRef.current = recognition;
+
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = "en-US";
+
+        recognition.onstart = () => {
+          setIsListening(true);
+        };
+
+        recognition.onend = () => {
+          setIsListening(false);
+        };
+
+        recognition.onresult = (event: SpeechRecognitionEvent) => {
+          const transcript = event.results[0][0].transcript;
+          setInputValue(transcript);
+          setIsListening(false);
+        };
+
+        recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+          console.error("Speech recognition error:", event.error);
+          setIsListening(false);
+        };
+      } catch (error) {
+        console.error("Failed to initialize speech recognition:", error);
+        setSpeechSupported(false);
+      }
     }
-  }, []);
+  }
+}, []);
+
+  // Load chat history and current chat from localStorage on component mount
+  useEffect(() => {
+    if (typeof window !== 'undefined' && status === 'authenticated') {
+      // Load chat history
+      const savedChatHistory = loadFromLocalStorage(STORAGE_KEYS.CHAT_HISTORY) as SerializedChatHistoryItem[] | null;
+      if (savedChatHistory) {
+        setChatHistory(deserializeChatHistory(savedChatHistory));
+      }
+
+      // Load current chat
+      const savedCurrentChat = loadFromLocalStorage(STORAGE_KEYS.CURRENT_CHAT) as SerializedCurrentChat | null;
+      if (savedCurrentChat) {
+        setMessages(deserializeMessages(savedCurrentChat.messages));
+        setCurrentChatId(savedCurrentChat.id);
+      }
+    }
+  }, [status]);
 
   // Initialize with welcome message (for both authenticated and unauthenticated users)
   useEffect(() => {
     if (status !== "loading") {
       const welcomeName = session?.user?.name || "there";
-      setMessages([
-        {
-          id: generateId(),
-          text: `Hello ${welcomeName}! I'm your AI assistant. How can I help you today? You can type your message or use the microphone to speak!`,
-          sender: "bot",
-          timestamp: new Date(),
-        },
-      ]);
+      const welcomeMessage = {
+        id: generateId(),
+        text: `Hello ${welcomeName}! I'm your AI assistant. How can I help you today? You can type your message or use the microphone to speak!`,
+        sender: "bot" as const,
+        timestamp: new Date(),
+      };
+
+      // Only set welcome message if no current chat is loaded
+      if (status === 'authenticated') {
+        const savedCurrentChat = loadFromLocalStorage(STORAGE_KEYS.CURRENT_CHAT) as SerializedCurrentChat | null;
+        if (!savedCurrentChat) {
+          setMessages([welcomeMessage]);
+          setCurrentChatId(generateId());
+        }
+      } else {
+        setMessages([welcomeMessage]);
+      }
     }
   }, [session, status]);
+
+  // Save current chat to localStorage whenever messages change
+  useEffect(() => {
+    if (status === 'authenticated' && messages.length > 0 && currentChatId) {
+      const currentChat: SerializedCurrentChat = {
+        id: currentChatId,
+        messages: serializeMessages(messages),
+        timestamp: new Date().toISOString(),
+      };
+      saveToLocalStorage(STORAGE_KEYS.CURRENT_CHAT, currentChat);
+    }
+  }, [messages, currentChatId, status]);
+
+  // Save chat history to localStorage whenever it changes
+  useEffect(() => {
+    if (status === 'authenticated' && chatHistory.length > 0) {
+      saveToLocalStorage(STORAGE_KEYS.CHAT_HISTORY, serializeChatHistory(chatHistory));
+    }
+  }, [chatHistory, status]);
 
   const generateId = () => {
     return (
@@ -134,27 +382,37 @@ function ChatbotContent() {
         : "New Chat";
 
       const newChatItem: ChatHistoryItem = {
-        id: generateId(),
+        id: currentChatId || generateId(),
         title: chatTitle,
         timestamp: new Date(),
         messages: [...messages],
       };
 
-      setChatHistory((prev) => [newChatItem, ...prev]);
+      setChatHistory((prev) => {
+        const updated = [newChatItem, ...prev];
+        // Save to localStorage
+        saveToLocalStorage(STORAGE_KEYS.CHAT_HISTORY, serializeChatHistory(updated));
+        return updated;
+      });
     }
 
-    // Clear current chat
-    setMessages([
-      {
-        id: generateId(),
-        text: `Hello ${
-          session?.user?.name || "there"
-        }! I'm your AI assistant. How can I help you today? You can type your message or use the microphone to speak!`,
-        sender: "bot",
-        timestamp: new Date(),
-      },
-    ]);
+    // Clear current chat and create new one
+    const newChatId = generateId();
+    const welcomeMessage = {
+      id: generateId(),
+      text: `Hello ${
+        session?.user?.name || "there"
+      }! I'm your AI assistant. How can I help you today? You can type your message or use the microphone to speak!`,
+      sender: "bot" as const,
+      timestamp: new Date(),
+    };
+
+    setMessages([welcomeMessage]);
+    setCurrentChatId(newChatId);
     setInputValue("");
+    
+    // Clear current chat from localStorage
+    clearFromLocalStorage(STORAGE_KEYS.CURRENT_CHAT);
   };
 
   const loadChat = (chatId: string) => {
@@ -163,7 +421,16 @@ function ChatbotContent() {
     const chatToLoad = chatHistory.find((chat) => chat.id === chatId);
     if (chatToLoad) {
       setMessages(chatToLoad.messages);
+      setCurrentChatId(chatId);
       setIsOpen(false);
+      
+      // Save loaded chat as current chat
+      const currentChat: SerializedCurrentChat = {
+        id: chatId,
+        messages: serializeMessages(chatToLoad.messages),
+        timestamp: new Date().toISOString(),
+      };
+      saveToLocalStorage(STORAGE_KEYS.CURRENT_CHAT, currentChat);
     }
   };
 
@@ -171,12 +438,27 @@ function ChatbotContent() {
     if (status !== "authenticated") return;
 
     e.stopPropagation();
-    setChatHistory((prev) => prev.filter((chat) => chat.id !== chatId));
+    setChatHistory((prev) => {
+      const updated = prev.filter((chat) => chat.id !== chatId);
+      // Save updated history to localStorage
+      saveToLocalStorage(STORAGE_KEYS.CHAT_HISTORY, serializeChatHistory(updated));
+      return updated;
+    });
+
+    // If the deleted chat is the current chat, clear it
+    if (chatId === currentChatId) {
+      clearFromLocalStorage(STORAGE_KEYS.CURRENT_CHAT);
+      handleNewChat();
+    }
   };
 
   const clearAllChats = () => {
     if (status !== "authenticated") return;
     setChatHistory([]);
+    // Clear from localStorage
+    clearFromLocalStorage(STORAGE_KEYS.CHAT_HISTORY);
+    clearFromLocalStorage(STORAGE_KEYS.CURRENT_CHAT);
+    handleNewChat();
   };
 
   const formatDate = (date: Date) => {
@@ -218,17 +500,6 @@ function ChatbotContent() {
     }
   };
 
-  // Simulate bot response
-  const getBotResponse = (userMessage: string): string => {
-    const responses = [
-      "Here are some products that might interest you:",
-      "I found these options for you:",
-      "Based on your query, I recommend these:",
-      "These products match what you're looking for:",
-    ];
-    return responses[Math.floor(Math.random() * responses.length)];
-  };
-
   // Handle input focus - redirect to sign-up if not authenticated
   const handleInputFocus = () => {
     if (status === "unauthenticated") {
@@ -245,122 +516,123 @@ function ChatbotContent() {
     setInputValue(e.target.value);
   };
 
-const handleSendMessage = async () => {
-  if (!inputValue.trim() || isLoading) return;
+  const handleSendMessage = async () => {
+    if (!inputValue.trim() || isLoading) return;
 
-  // Add user message
-  const userMessage: Message = {
-    id: generateId(),
-    text: inputValue,
-    sender: "user",
-    timestamp: new Date(),
-  };
-
-  setMessages((prev) => [...prev, userMessage]);
-  setInputValue("");
-  setIsLoading(true);
-
-  try {
-    // First check if we should scrape
-    const scrapingDecision = await checkScrapingNeeded(inputValue);
-    
-    // Call the appropriate API endpoint
-    const response = await fetch('/api/aiover', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        userInput: inputValue,
-        // If we have image URL, include it here
-        // imageUrl: imageUrl (if you have this variable)
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const data = await response.json();
-    
-    if (!data.success) {
-      throw new Error(data.message || 'API request failed');
-    }
-
-    // Create bot message
-    const botMessage: Message = {
+    // Add user message
+    const userMessage: Message = {
       id: generateId(),
-      text: data.message,
-      sender: "bot",
+      text: inputValue,
+      sender: "user",
       timestamp: new Date(),
-      // If the response contains products, include them
-      products: scrapingDecision.shouldScrape ? await getScrapedProducts(scrapingDecision.productQuery) : undefined
     };
 
-    setMessages((prev) => [...prev, botMessage]);
-  } catch (error) {
-    console.error("Failed to process message:", error);
-    // Fallback response
-    setMessages((prev) => [
-      ...prev,
-      {
+    setMessages((prev) => [...prev, userMessage]);
+    setInputValue("");
+    setIsLoading(true);
+
+    try {
+      // First check if we should scrape
+      const scrapingDecision = await checkScrapingNeeded(inputValue);
+      
+      // Call the appropriate API endpoint
+      const response = await fetch('/api/aiover', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userInput: inputValue,
+          // If we have image URL, include it here
+          // imageUrl: imageUrl (if you have this variable)
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.message || 'API request failed');
+      }
+
+      // Create bot message
+      const botMessage: Message = {
         id: generateId(),
-        text: "I encountered an error while processing your request. Please try again.",
+        text: data.message,
         sender: "bot",
         timestamp: new Date(),
-      },
-    ]);
-  } finally {
-    setIsLoading(false);
-  }
-};
+        // If the response contains products, include them
+        products: scrapingDecision.shouldScrape ? await getScrapedProducts(scrapingDecision.productQuery) : undefined
+      };
 
-// Helper function to get scraped products if needed
-const getScrapedProducts = async (query: string): Promise<Product[] | undefined> => {
-  try {
-    const response = await fetch(`/api/webscrap?query=${encodeURIComponent(query)}`);
-    if (!response.ok) return undefined;
-    const data = await response.json();
-    return data.products || undefined;
-  } catch (error) {
-    console.error("Failed to fetch products:", error);
-    return undefined;
-  }
-};
-
-// Helper function to check if scraping is needed (unchanged)
-const checkScrapingNeeded = async (userQuery: string) => {
-  try {
-    const response = await fetch("/api/shouldScrap", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        userQuery: userQuery,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      setMessages((prev) => [...prev, botMessage]);
+    } catch (error) {
+      console.error("Failed to process message:", error);
+      // Fallback response
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: generateId(),
+          text: "I encountered an error while processing your request. Please try again.",
+          sender: "bot",
+          timestamp: new Date(),
+        },
+      ]);
+    } finally {
+      setIsLoading(false);
     }
+  };
 
-    const data = await response.json();
+  // Helper function to get scraped products if needed
+  const getScrapedProducts = async (query: string): Promise<Product[] | undefined> => {
+    try {
+      const response = await fetch(`/api/webscrap?query=${encodeURIComponent(query)}`);
+      if (!response.ok) return undefined;
+      const data = await response.json();
+      return data.products || undefined;
+    } catch (error) {
+      console.error("Failed to fetch products:", error);
+      return undefined;
+    }
+  };
 
-    return {
-      shouldScrape: data.shouldScrape || false,
-      productQuery: data.productQuery || "",
-      confidence: data.confidence || 0,
-    };
-  } catch (error) {
-    console.error("Error checking scraping need:", error);
-    return {
-      shouldScrape: false,
-      productQuery: "",
-      confidence: 0,
-    };
-  }
-};
+  // Helper function to check if scraping is needed
+  const checkScrapingNeeded = async (userQuery: string) => {
+    try {
+      const response = await fetch("/api/shouldScrap", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userQuery: userQuery,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      return {
+        shouldScrape: data.shouldScrape || false,
+        productQuery: data.productQuery || "",
+        confidence: data.confidence || 0,
+      };
+    } catch (error) {
+      console.error("Error checking scraping need:", error);
+      return {
+        shouldScrape: false,
+        productQuery: "",
+        confidence: 0,
+      };
+    }
+  };
+
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (status === "unauthenticated") {
       router.push("/sign-up");
@@ -374,6 +646,9 @@ const checkScrapingNeeded = async (userQuery: string) => {
   };
 
   const handleSignOut = async () => {
+    // Clear localStorage on sign out
+    clearFromLocalStorage(STORAGE_KEYS.CURRENT_CHAT);
+    clearFromLocalStorage(STORAGE_KEYS.CHAT_HISTORY);
     await signOut({ callbackUrl: "/sign-in" });
   };
 
@@ -392,9 +667,8 @@ const checkScrapingNeeded = async (userQuery: string) => {
   const isAuthenticated = status === "authenticated";
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 to-black text-white flex flex-col">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900  to-black text-white flex flex-col">
       {/* Only show UserButton for authenticated users */}
-
       {isAuthenticated && <UserButton />}
 
       {/* Sidebar toggle button - only show for authenticated users */}
@@ -432,10 +706,12 @@ const checkScrapingNeeded = async (userQuery: string) => {
               </p>
             </div>
             {session?.user?.image && (
-              <img
+              <Image
                 src={session.user.image}
                 alt="Profile"
-                className="w-10 h-10 rounded-full border-2 border-gray-600"
+                width={40}
+                height={40}
+                className="rounded-full border-2 border-gray-600"
               />
             )}
           </div>
@@ -472,7 +748,11 @@ const checkScrapingNeeded = async (userQuery: string) => {
                 <div
                   key={chat.id}
                   onClick={() => loadChat(chat.id)}
-                  className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-700/50 cursor-pointer group border border-gray-700/50"
+                  className={`flex items-center justify-between p-3 rounded-lg hover:bg-gray-700/50 cursor-pointer group border ${
+                    chat.id === currentChatId 
+                      ? 'border-blue-500/50 bg-blue-900/20' 
+                      : 'border-gray-700/50'
+                  }`}
                 >
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-white truncate font-medium">
@@ -529,11 +809,18 @@ const checkScrapingNeeded = async (userQuery: string) => {
       )}
 
       {/* Main Chat Area */}
-      <main className="flex-1 flex flex-col max-w-4xl mx-auto w-full p-4">
+      <main className={`flex-1 flex flex-col max-w-4xl mx-auto w-full p-4 ${!isAuthenticated ? 'pt-6' : ''}`}>
         {/* Messages */}
+        {!isAuthenticated && (
+          <div className="m-4 p-4 bg-blue-900/30 border border-blue-500/50 rounded-lg">
+            <p className="text-sm text-blue-300">
+              Click on the input area below to start chatting!
+            </p>
+          </div>
+        )}
         <div
           ref={chatContainerRef}
-          className="flex-1 overflow-y-auto mb-6 px-4 max-h-[60vh] scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800"
+          className="flex-1 overflow-y-auto mb-6 px-4 max-h-[70vh] "
         >
           <div className="space-y-4">
             {messages.map((message) => (
@@ -590,21 +877,28 @@ const checkScrapingNeeded = async (userQuery: string) => {
             )}
           </div>
         </div>
-
+        
         {/* Input Area */}
         <div className="bg-gray-800 rounded-2xl p-4 border border-gray-700">
           <div className="flex items-center gap-3">
             <input
               type="text"
-              placeholder="Type your message here..."
-              className="flex-1 bg-transparent text-white placeholder-gray-400 focus:outline-none text-sm"
+              placeholder={
+                isAuthenticated 
+                  ? "Type your message here..." 
+                  : "Click here to sign up and start chatting..."
+              }
+              className={`flex-1 bg-transparent text-white placeholder-gray-400 focus:outline-none text-sm ${
+                !isAuthenticated ? 'cursor-pointer' : ''
+              }`}
               value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
+              onChange={handleInputChange}
+              onKeyPress={handleKeyPress}
+              onFocus={handleInputFocus}
               disabled={isLoading}
             />
 
-            {/* Microphone Button - Add this back */}
+            {/* Microphone Button */}
             {speechSupported && (
               <button
                 onClick={toggleListening}
@@ -625,7 +919,7 @@ const checkScrapingNeeded = async (userQuery: string) => {
             )}
 
             <button
-              onClick={handleSendMessage || handleKeyPress}
+              onClick={handleSendMessage}
               disabled={!inputValue.trim() || isLoading}
               className="p-3 rounded-full bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-600 disabled:text-gray-400"
             >
