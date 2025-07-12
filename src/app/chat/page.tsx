@@ -1,15 +1,30 @@
-"use client"
-import { useState, useEffect, useRef } from 'react';
-import { useSession, signOut, SessionProvider } from 'next-auth/react';
+"use client";
+import { useState, useEffect, useRef } from "react";
+import { useSession, signOut, SessionProvider } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { Menu, X, MessageSquarePlus, LogOut, Bot, Trash2, Send, User, Loader2, Mic, MicOff } from 'lucide-react';
-import UserButton from '@/components/user-button';
+import {
+  Menu,
+  X,
+  MessageSquarePlus,
+  LogOut,
+  Bot,
+  Trash2,
+  Send,
+  User,
+  Loader2,
+  Mic,
+  MicOff,
+} from "lucide-react";
+import UserButton from "@/components/user-button";
+import { Product } from "@/lib/walmart-scrapper";
+import ProductCarousel from "@/components/ProductCarousel";
 
 type Message = {
   id: string;
   text: string;
-  sender: 'user' | 'bot';
+  sender: "user" | "bot";
   timestamp: Date;
+  products?: Product[]; // Add products to message type
 };
 
 type ChatHistoryItem = {
@@ -22,7 +37,7 @@ type ChatHistoryItem = {
 function ChatbotContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const [inputValue, setInputValue] = useState<string>('');
+  const [inputValue, setInputValue] = useState<string>("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isOpen, setIsOpen] = useState(false);
@@ -34,14 +49,19 @@ function ChatbotContent() {
 
   // Initialize speech recognition
   useEffect(() => {
-    if (typeof window !== 'undefined' && ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+    if (
+      typeof window !== "undefined" &&
+      ("webkitSpeechRecognition" in window || "SpeechRecognition" in window)
+    ) {
       setSpeechSupported(true);
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      const SpeechRecognition =
+        (window as any).SpeechRecognition ||
+        (window as any).webkitSpeechRecognition;
       recognitionRef.current = new SpeechRecognition();
-      
+
       recognitionRef.current.continuous = false;
       recognitionRef.current.interimResults = false;
-      recognitionRef.current.lang = 'en-US';
+      recognitionRef.current.lang = "en-US";
 
       recognitionRef.current.onstart = () => {
         setIsListening(true);
@@ -58,7 +78,7 @@ function ChatbotContent() {
       };
 
       recognitionRef.current.onerror = (event: any) => {
-        console.error('Speech recognition error:', event.error);
+        console.error("Speech recognition error:", event.error);
         setIsListening(false);
       };
     }
@@ -66,24 +86,29 @@ function ChatbotContent() {
 
   // Initialize with welcome message (for both authenticated and unauthenticated users)
   useEffect(() => {
-    if (status !== 'loading') {
-      const welcomeName = session?.user?.name || 'there';
-      setMessages([{
-        id: generateId(),
-        text: `Hello ${welcomeName}! I'm your AI assistant. How can I help you today? You can type your message or use the microphone to speak!`,
-        sender: 'bot',
-        timestamp: new Date()
-      }]);
+    if (status !== "loading") {
+      const welcomeName = session?.user?.name || "there";
+      setMessages([
+        {
+          id: generateId(),
+          text: `Hello ${welcomeName}! I'm your AI assistant. How can I help you today? You can type your message or use the microphone to speak!`,
+          sender: "bot",
+          timestamp: new Date(),
+        },
+      ]);
     }
   }, [session, status]);
 
   const generateId = () => {
-    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    return (
+      Math.random().toString(36).substring(2, 15) +
+      Math.random().toString(36).substring(2, 15)
+    );
   };
 
   const toggleSidebar = () => {
     // Only allow sidebar toggle for authenticated users
-    if (status === 'authenticated') {
+    if (status === "authenticated") {
       setIsOpen(!isOpen);
     }
   };
@@ -91,45 +116,51 @@ function ChatbotContent() {
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+      chatContainerRef.current.scrollTop =
+        chatContainerRef.current.scrollHeight;
     }
   }, [messages]);
 
   const handleNewChat = () => {
     // Only allow new chat for authenticated users
-    if (status !== 'authenticated') return;
+    if (status !== "authenticated") return;
 
     // Save current chat if it has messages
     if (messages.length > 1) {
-      const firstUserMessage = messages.find(msg => msg.sender === 'user');
-      const chatTitle = firstUserMessage 
-        ? firstUserMessage.text.slice(0, 40) + (firstUserMessage.text.length > 40 ? '...' : '')
-        : 'New Chat';
-      
+      const firstUserMessage = messages.find((msg) => msg.sender === "user");
+      const chatTitle = firstUserMessage
+        ? firstUserMessage.text.slice(0, 40) +
+          (firstUserMessage.text.length > 40 ? "..." : "")
+        : "New Chat";
+
       const newChatItem: ChatHistoryItem = {
         id: generateId(),
         title: chatTitle,
         timestamp: new Date(),
-        messages: [...messages]
+        messages: [...messages],
       };
 
-      setChatHistory(prev => [newChatItem, ...prev]);
+      setChatHistory((prev) => [newChatItem, ...prev]);
     }
 
     // Clear current chat
-    setMessages([{
-      id: generateId(),
-      text: `Hello ${session?.user?.name || 'there'}! I'm your AI assistant. How can I help you today? You can type your message or use the microphone to speak!`,
-      sender: 'bot',
-      timestamp: new Date()
-    }]);
-    setInputValue('');
+    setMessages([
+      {
+        id: generateId(),
+        text: `Hello ${
+          session?.user?.name || "there"
+        }! I'm your AI assistant. How can I help you today? You can type your message or use the microphone to speak!`,
+        sender: "bot",
+        timestamp: new Date(),
+      },
+    ]);
+    setInputValue("");
   };
 
   const loadChat = (chatId: string) => {
-    if (status !== 'authenticated') return;
-    
-    const chatToLoad = chatHistory.find(chat => chat.id === chatId);
+    if (status !== "authenticated") return;
+
+    const chatToLoad = chatHistory.find((chat) => chat.id === chatId);
     if (chatToLoad) {
       setMessages(chatToLoad.messages);
       setIsOpen(false);
@@ -137,30 +168,30 @@ function ChatbotContent() {
   };
 
   const deleteChat = (chatId: string, e: React.MouseEvent) => {
-    if (status !== 'authenticated') return;
-    
+    if (status !== "authenticated") return;
+
     e.stopPropagation();
-    setChatHistory(prev => prev.filter(chat => chat.id !== chatId));
+    setChatHistory((prev) => prev.filter((chat) => chat.id !== chatId));
   };
 
   const clearAllChats = () => {
-    if (status !== 'authenticated') return;
+    if (status !== "authenticated") return;
     setChatHistory([]);
   };
 
   const formatDate = (date: Date) => {
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
   };
 
   // Voice recognition functions
   const startListening = () => {
-    if (status === 'unauthenticated') {
-      router.push('/sign-up');
+    if (status === "unauthenticated") {
+      router.push("/sign-up");
       return;
     }
 
@@ -168,7 +199,7 @@ function ChatbotContent() {
       try {
         recognitionRef.current.start();
       } catch (error) {
-        console.error('Error starting speech recognition:', error);
+        console.error("Error starting speech recognition:", error);
       }
     }
   };
@@ -190,88 +221,164 @@ function ChatbotContent() {
   // Simulate bot response
   const getBotResponse = (userMessage: string): string => {
     const responses = [
-      "That's an interesting question! Let me think about that for you.",
-      "I understand what you're asking. Here's my perspective on that topic.",
-      "Thanks for sharing that with me. I'd be happy to help you with this.",
-      "That's a great point! Let me provide some information about that.",
-      "I appreciate you asking. Here's what I can tell you about that subject.",
-      "That's something I can definitely help you with. Let me explain.",
-      "Interesting! I have some thoughts on that topic I'd like to share.",
-      "Thank you for the question. I'll do my best to provide a helpful answer."
+      "Here are some products that might interest you:",
+      "I found these options for you:",
+      "Based on your query, I recommend these:",
+      "These products match what you're looking for:",
     ];
-    
     return responses[Math.floor(Math.random() * responses.length)];
   };
 
   // Handle input focus - redirect to sign-up if not authenticated
   const handleInputFocus = () => {
-    if (status === 'unauthenticated') {
-      router.push('/sign-up');
+    if (status === "unauthenticated") {
+      router.push("/sign-up");
     }
   };
 
   // Handle input change - redirect to sign-up if not authenticated
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (status === 'unauthenticated') {
-      router.push('/sign-up');
+    if (status === "unauthenticated") {
+      router.push("/sign-up");
       return;
     }
     setInputValue(e.target.value);
   };
 
-  const handleSendMessage = async () => {
-    if (status === 'unauthenticated') {
-      router.push('/sign-up');
-      return;
-    }
+const handleSendMessage = async () => {
+  if (!inputValue.trim() || isLoading) return;
 
-    if (!inputValue.trim()) return;
-    
-    setIsLoading(true);
-    
-    // Add user message
-    const userMessage: Message = {
-      id: generateId(),
-      text: inputValue,
-      sender: 'user',
-      timestamp: new Date()
-    };
-    
-    setMessages(prev => [...prev, userMessage]);
-    setInputValue('');
-    
-    // Simulate typing delay
-    setTimeout(() => {
-      const botMessage: Message = {
-        id: generateId(),
-        text: getBotResponse(inputValue),
-        sender: 'bot',
-        timestamp: new Date()
-      };
-      
-      setMessages(prev => [...prev, botMessage]);
-      setIsLoading(false);
-    }, 1000 + Math.random() * 2000);
+  // Add user message
+  const userMessage: Message = {
+    id: generateId(),
+    text: inputValue,
+    sender: "user",
+    timestamp: new Date(),
   };
 
+  setMessages((prev) => [...prev, userMessage]);
+  setInputValue("");
+  setIsLoading(true);
+
+  try {
+    // First check if we should scrape
+    const scrapingDecision = await checkScrapingNeeded(inputValue);
+    
+    // Call the appropriate API endpoint
+    const response = await fetch('/api/aiover', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        userInput: inputValue,
+        // If we have image URL, include it here
+        // imageUrl: imageUrl (if you have this variable)
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    if (!data.success) {
+      throw new Error(data.message || 'API request failed');
+    }
+
+    // Create bot message
+    const botMessage: Message = {
+      id: generateId(),
+      text: data.message,
+      sender: "bot",
+      timestamp: new Date(),
+      // If the response contains products, include them
+      products: scrapingDecision.shouldScrape ? await getScrapedProducts(scrapingDecision.productQuery) : undefined
+    };
+
+    setMessages((prev) => [...prev, botMessage]);
+  } catch (error) {
+    console.error("Failed to process message:", error);
+    // Fallback response
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: generateId(),
+        text: "I encountered an error while processing your request. Please try again.",
+        sender: "bot",
+        timestamp: new Date(),
+      },
+    ]);
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+// Helper function to get scraped products if needed
+const getScrapedProducts = async (query: string): Promise<Product[] | undefined> => {
+  try {
+    const response = await fetch(`/api/webscrap?query=${encodeURIComponent(query)}`);
+    if (!response.ok) return undefined;
+    const data = await response.json();
+    return data.products || undefined;
+  } catch (error) {
+    console.error("Failed to fetch products:", error);
+    return undefined;
+  }
+};
+
+// Helper function to check if scraping is needed (unchanged)
+const checkScrapingNeeded = async (userQuery: string) => {
+  try {
+    const response = await fetch("/api/shouldScrap", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        userQuery: userQuery,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    return {
+      shouldScrape: data.shouldScrape || false,
+      productQuery: data.productQuery || "",
+      confidence: data.confidence || 0,
+    };
+  } catch (error) {
+    console.error("Error checking scraping need:", error);
+    return {
+      shouldScrape: false,
+      productQuery: "",
+      confidence: 0,
+    };
+  }
+};
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (status === 'unauthenticated') {
-      router.push('/sign-up');
+    if (status === "unauthenticated") {
+      router.push("/sign-up");
       return;
     }
 
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
     }
   };
 
   const handleSignOut = async () => {
-    await signOut({ callbackUrl: '/sign-in' }); 
+    await signOut({ callbackUrl: "/sign-in" });
   };
 
   // Show loading spinner while checking authentication
-  if (status === 'loading') {
+  if (status === "loading") {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 to-black flex items-center justify-center">
         <div className="text-center">
@@ -282,14 +389,14 @@ function ChatbotContent() {
     );
   }
 
-  const isAuthenticated = status === 'authenticated';
+  const isAuthenticated = status === "authenticated";
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 to-black text-white flex flex-col">
       {/* Only show UserButton for authenticated users */}
-      
-      {isAuthenticated && <UserButton/>}
-      
+
+      {isAuthenticated && <UserButton />}
+
       {/* Sidebar toggle button - only show for authenticated users */}
       {isAuthenticated && (
         <button
@@ -316,17 +423,18 @@ function ChatbotContent() {
             isOpen ? "left-0" : "-left-full"
           }`}
         >
-         
           {/* Header */}
           <div className="flex items-center justify-between p-6 border-b border-gray-700">
             <div>
               <h1 className="font-bold text-xl text-white">ChatBot</h1>
-              <p className="text-sm text-gray-400">Welcome, {session?.user?.name || session?.user?.email}</p>
+              <p className="text-sm text-gray-400">
+                Welcome, {session?.user?.name || session?.user?.email}
+              </p>
             </div>
             {session?.user?.image && (
-              <img 
-                src={session.user.image} 
-                alt="Profile" 
+              <img
+                src={session.user.image}
+                alt="Profile"
                 className="w-10 h-10 rounded-full border-2 border-gray-600"
               />
             )}
@@ -334,7 +442,7 @@ function ChatbotContent() {
 
           {/* Chat Controls */}
           <div className="p-4 border-b border-gray-700">
-            <button 
+            <button
               onClick={handleNewChat}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors"
             >
@@ -350,7 +458,7 @@ function ChatbotContent() {
                 Chat History ({chatHistory.length})
               </h3>
               {chatHistory.length > 0 && (
-                <button 
+                <button
                   onClick={clearAllChats}
                   className="text-xs text-red-400 hover:text-red-300 hover:underline"
                 >
@@ -358,20 +466,26 @@ function ChatbotContent() {
                 </button>
               )}
             </div>
-            
+
             <div className="space-y-2">
-              {chatHistory.map(chat => (
-                <div 
+              {chatHistory.map((chat) => (
+                <div
                   key={chat.id}
                   onClick={() => loadChat(chat.id)}
                   className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-700/50 cursor-pointer group border border-gray-700/50"
                 >
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-white truncate font-medium">{chat.title}</p>
-                    <p className="text-xs text-gray-400 mt-1">{formatDate(chat.timestamp)}</p>
-                    <p className="text-xs text-gray-500">{chat.messages.length} messages</p>
+                    <p className="text-sm text-white truncate font-medium">
+                      {chat.title}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {formatDate(chat.timestamp)}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {chat.messages.length} messages
+                    </p>
                   </div>
-                  <button 
+                  <button
                     onClick={(e) => deleteChat(chat.id, e)}
                     className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-400 p-2 rounded-full hover:bg-gray-600 transition-all"
                     title="Delete chat"
@@ -380,12 +494,14 @@ function ChatbotContent() {
                   </button>
                 </div>
               ))}
-              
+
               {chatHistory.length === 0 && (
                 <div className="text-center py-8">
                   <Bot className="w-12 h-12 text-gray-600 mx-auto mb-3" />
                   <p className="text-sm text-gray-500">No chat history yet</p>
-                  <p className="text-xs text-gray-600 mt-1">Start a conversation to see your chats here</p>
+                  <p className="text-xs text-gray-600 mt-1">
+                    Start a conversation to see your chats here
+                  </p>
                 </div>
               )}
             </div>
@@ -393,7 +509,7 @@ function ChatbotContent() {
 
           {/* Bottom Actions */}
           <div className="p-4 border-t border-gray-700 space-y-2">
-            <button 
+            <button
               onClick={handleSignOut}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
             >
@@ -413,80 +529,48 @@ function ChatbotContent() {
       )}
 
       {/* Main Chat Area */}
-      <main className={`flex-1 flex flex-col max-w-4xl mx-auto w-full p-4 ${!isAuthenticated ? 'pt-6' : ''}`}>
-        {/* Header */}
-        <div className={`text-center mb-6 ${isAuthenticated ? 'pt-8' : 'pt-6'}`}>
-          <div className="flex items-center justify-center mb-4">
-              <h1 className="font-extrabold text-3xl text-gray-400">Welcome  {session?.user?.name || session?.user?.email}</h1>
-          </div>
-          <div className="inline-flex items-center bg-green-900/30 border border-green-500/50 rounded-full px-4 py-2">
-            <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
-            <span className="text-sm text-green-400">Online</span>
-          </div>
-          {/* Show speech recognition status */}
-          {speechSupported && isAuthenticated && (
-            <div className="mt-2 text-xs text-gray-500">
-             
-            </div>
-          )}
-          {/* Show sign-in prompt for unauthenticated users */}
-          {!isAuthenticated && (
-            <div className="mt-4 p-4 bg-blue-900/30 border border-blue-500/50 rounded-lg">
-              <p className="text-sm text-blue-300">
-                Click on the input area below to start chatting!
-              </p>
-            </div>
-          )}
-        </div>
-
-        {/* Chat Messages */}
-        <div 
-          ref={chatContainerRef} 
+      <main className="flex-1 flex flex-col max-w-4xl mx-auto w-full p-4">
+        {/* Messages */}
+        <div
+          ref={chatContainerRef}
           className="flex-1 overflow-y-auto mb-6 px-4 max-h-[60vh] scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800"
         >
           <div className="space-y-4">
             {messages.map((message) => (
-              <div 
-                key={message.id} 
-                className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+              <div
+                key={message.id}
+                className={`flex ${
+                  message.sender === "user" ? "justify-end" : "justify-start"
+                }`}
               >
-                <div className={`flex items-start gap-3 max-w-[80%] ${
-                  message.sender === 'user' ? 'flex-row-reverse' : 'flex-row'
-                }`}>
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                    message.sender === 'user' ? 'bg-blue-600' : 'bg-gray-600'
-                  }`}>
-                    {message.sender === 'user' ? (
-                      session?.user?.image ? (
-                        <img 
-                          src={session.user.image} 
-                          alt="User" 
-                          className="w-8 h-8 rounded-full"
-                        />
-                      ) : (
-                        <User className="w-4 h-4 text-white" />
-                      )
-                    ) : (
-                      <Bot className="w-4 h-4 text-white" />
-                    )}
-                  </div>
-                  <div className={`rounded-2xl px-4 py-3 ${
-                    message.sender === 'user' 
-                      ? 'bg-blue-600 text-white' 
-                      : 'bg-gray-700 text-gray-100'
-                  }`}>
+                <div
+                  className={`flex items-start gap-3 max-w-[80%] ${
+                    message.sender === "user" ? "flex-row-reverse" : "flex-row"
+                  }`}
+                >
+                  <div
+                    className={`rounded-2xl px-4 py-3 ${
+                      message.sender === "user" ? "bg-blue-600" : "bg-gray-700"
+                    }`}
+                  >
+                    {/* Product Carousel - only for bot messages with products */}
+                    {message.sender === "bot" &&
+                      message.products &&
+                      message.products.length > 0 && (
+                        <ProductCarousel products={message.products} />
+                      )}
                     <p className="text-sm leading-relaxed">{message.text}</p>
                     <p className="text-xs opacity-70 mt-1">
-                      {message.timestamp.toLocaleTimeString([], { 
-                        hour: '2-digit', 
-                        minute: '2-digit' 
+                      {message.timestamp.toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
                       })}
                     </p>
                   </div>
                 </div>
               </div>
             ))}
-            
+
             {isLoading && (
               <div className="flex justify-start">
                 <div className="flex items-start gap-3 max-w-[80%]">
@@ -495,12 +579,10 @@ function ChatbotContent() {
                   </div>
                   <div className="bg-gray-700 rounded-2xl px-4 py-3">
                     <div className="flex items-center space-x-2">
-                      <span className="text-sm text-gray-300">Thinking</span>
-                      <div className="flex space-x-1">
-                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
-                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
-                      </div>
+                      <span className="text-sm text-gray-300">
+                        Searching for products...
+                      </span>
+                      <Loader2 className="w-4 h-4 animate-spin" />
                     </div>
                   </div>
                 </div>
@@ -514,32 +596,25 @@ function ChatbotContent() {
           <div className="flex items-center gap-3">
             <input
               type="text"
-              placeholder={
-                isAuthenticated 
-                  ? "Type your message here..." 
-                  : "Click here to sign up and start chatting..."
-              }
-              className={`flex-1 bg-transparent text-white placeholder-gray-400 focus:outline-none text-sm ${
-                !isAuthenticated ? 'cursor-pointer' : ''
-              }`}
+              placeholder="Type your message here..."
+              className="flex-1 bg-transparent text-white placeholder-gray-400 focus:outline-none text-sm"
               value={inputValue}
-              onChange={handleInputChange}
-              onKeyPress={handleKeyPress}
-              onFocus={handleInputFocus}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
               disabled={isLoading}
             />
-            
-            {/* Voice input button */}
-            {speechSupported && isAuthenticated && (
+
+            {/* Microphone Button - Add this back */}
+            {speechSupported && (
               <button
                 onClick={toggleListening}
                 disabled={isLoading}
-                className={`p-3 rounded-full transition-all ${
+                className={`p-3 rounded-full ${
                   isListening
-                    ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse'
-                    : 'bg-gray-600 hover:bg-gray-500 text-gray-300'
-                } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                title={isListening ? 'Stop listening' : 'Click to speak'}
+                    ? "bg-red-600 hover:bg-red-700 text-white animate-pulse"
+                    : "bg-gray-600 hover:bg-gray-500 text-gray-300"
+                }`}
+                title={isListening ? "Stop listening" : "Start voice input"}
               >
                 {isListening ? (
                   <MicOff className="w-5 h-5" />
@@ -549,28 +624,14 @@ function ChatbotContent() {
               </button>
             )}
 
-            <button 
-              onClick={handleSendMessage}
-              disabled={!inputValue.trim() || isLoading || !isAuthenticated}
-              className={`p-3 rounded-full transition-all ${
-                inputValue.trim() && !isLoading && isAuthenticated
-                  ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg hover:shadow-xl' 
-                  : 'bg-gray-600 text-gray-400 cursor-not-allowed'
-              }`}
+            <button
+              onClick={handleSendMessage || handleKeyPress}
+              disabled={!inputValue.trim() || isLoading}
+              className="p-3 rounded-full bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-600 disabled:text-gray-400"
             >
               <Send className="w-5 h-5" />
             </button>
           </div>
-          
-          {/* Voice status indicator */}
-          {isListening && (
-            <div className="mt-2 flex items-center justify-center">
-              <div className="flex items-center space-x-2 text-red-400">
-                <div className="w-2 h-2 bg-red-400 rounded-full animate-pulse"></div>
-                <span className="text-sm">Listening... Speak now</span>
-              </div>
-            </div>
-          )}
         </div>
       </main>
     </div>
