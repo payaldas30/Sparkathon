@@ -70,7 +70,7 @@ async function runAssistant(userInput: string | null, imageUrl: string | null = 
     const products = await scrapeProductData(userInput);
     const jsonText = JSON.stringify({ products }, null, 2);
 
-    const prompt = `You are a product review analyst. Given the following product data in JSON format, summarize the comparison between products.
+    const prompt = `You are a product review analyst. Given the following product data in JSON format from Walmart, summarize the comparison between products.
 Explain each product in a point-wise manner. Only include relevant buyer information like features, ratings, and price indicators.
 
 JSON data:
