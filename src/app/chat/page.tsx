@@ -618,7 +618,7 @@ function ChatbotContent() {
   ): Promise<Product[] | undefined> => {
     try {
       const response = await fetch(
-        `/api/proxy?endpoint=webscrap&query=${encodeURIComponent(query)}`
+        `https://walmart-scraper-latest.onrender.com/api/search?query=${encodeURIComponent(query)}`
       );
       if (!response.ok) return undefined;
       const data = await response.json();
