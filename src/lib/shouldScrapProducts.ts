@@ -38,7 +38,7 @@ export async function makeScrapingDecision(userQuery: string): Promise<ScrapingD
 async function shouldScrapeProducts(userQuery: string): Promise<boolean> {
   try {
     const response = await groq.chat.completions.create({
-      model: "llama3-8b-8192",
+      model: "meta-llama/llama-4-scout-17b-16e-instruct",
       messages: [
         {
           role: "system",
@@ -65,7 +65,7 @@ async function shouldScrapeProducts(userQuery: string): Promise<boolean> {
 async function extractProductName(userQuery: string): Promise<string> {
   try {
     const response = await groq.chat.completions.create({
-      model: "llama3-8b-8192",
+      model: "meta-llama/llama-4-scout-17b-16e-instruct",
       messages: [
         {
           role: "system",
