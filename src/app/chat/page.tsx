@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useSession, signOut, SessionProvider } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { Camera } from "lucide-react";
 import Image from "next/image";
 import {
   Menu,
@@ -25,6 +26,7 @@ type Message = {
   sender: "user" | "bot";
   timestamp: Date;
   products?: Product[]; // Add products to message type
+  imageUrl?: string;
 };
 
 type ChatHistoryItem = {
@@ -182,6 +184,8 @@ function ChatbotContent() {
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   // Initialize speech recognition
   // useEffect(() => {
@@ -540,15 +544,34 @@ function ChatbotContent() {
     setInputValue(e.target.value);
   };
 
-  const handleSendMessage = async () => {
-    if (!inputValue.trim() || isLoading) return;
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setSelectedImage(file);
 
-    // Add user message
+      // Create preview URL
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const removeSelectedImage = () => {
+    setSelectedImage(null);
+    setImagePreview(null);
+  };
+
+  const handleSendMessage = async () => {
+    if ((!inputValue.trim() && !selectedImage) || isLoading) return;
+
     const userMessage: Message = {
       id: generateId(),
       text: inputValue,
       sender: "user",
       timestamp: new Date(),
+      imageUrl: imagePreview || undefined,
     };
 
     setMessages((prev) => [...prev, userMessage]);
@@ -556,53 +579,82 @@ function ChatbotContent() {
     setIsLoading(true);
 
     try {
-      // First check if we should scrape
-      const scrapingDecision = await checkScrapingNeeded(inputValue);
+      let productQuery = inputValue;
+      let products: Product[] | undefined;
 
-      // Call the appropriate API endpoint
+      // Step 1: Process image if uploaded
+      if (selectedImage) {
+        const formData = new FormData();
+        formData.append("image", selectedImage);
+
+        const imageResponse = await fetch("/api/process-image", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!imageResponse.ok) throw new Error("Image processing failed");
+
+        const imageData = await imageResponse.json();
+        productQuery = imageData.productQuery || inputValue;
+
+        // Add image analysis to chat
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: generateId(),
+            text: `I found this product: ${imageData.productQuery}. ${
+              inputValue || "Tell me about it"
+            }`,
+            sender: "bot",
+            timestamp: new Date(),
+          },
+        ]);
+      }
+
+      // Step 2: Check if we should scrape
+      const scrapingDecision = await checkScrapingNeeded(productQuery);
+
+      if (scrapingDecision.shouldScrape) {
+        products = await getScrapedProducts(scrapingDecision.productQuery);
+      }
+
+      // Step 3: Send to AI endpoint
       const response = await fetch("/api/aiover", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          userInput: inputValue,
-          // If we have image URL, include it here
-          // imageUrl: imageUrl (if you have this variable)
+          userInput: productQuery,
+          products,
+          imageUrl: imagePreview,
         }),
       });
 
-      if (!response.ok) {
+      if (!response.ok)
         throw new Error(`HTTP error! status: ${response.status}`);
-      }
 
       const data = await response.json();
 
-      if (!data.success) {
-        throw new Error(data.message || "API request failed");
-      }
-
-      // Create bot message
       const botMessage: Message = {
         id: generateId(),
         text: data.message,
         sender: "bot",
         timestamp: new Date(),
-        // If the response contains products, include them
-        products: scrapingDecision.shouldScrape
-          ? await getScrapedProducts(scrapingDecision.productQuery)
-          : undefined,
+        products: data.products || products,
+        imageUrl: data.imageUrl || imagePreview || undefined,
       };
 
       setMessages((prev) => [...prev, botMessage]);
+      setSelectedImage(null);
+      setImagePreview(null);
     } catch (error) {
       console.error("Failed to process message:", error);
-      // Fallback response
       setMessages((prev) => [
         ...prev,
         {
           id: generateId(),
-          text: "I encountered an error while processing your request. Please try again.",
+          text: "I encountered an error. Please try again.",
           sender: "bot",
           timestamp: new Date(),
         },
@@ -611,14 +663,15 @@ function ChatbotContent() {
       setIsLoading(false);
     }
   };
-
   // Helper function to get scraped products if needed
   const getScrapedProducts = async (
     query: string
   ): Promise<Product[] | undefined> => {
     try {
       const response = await fetch(
-        `https://walmart-scraper-latest.onrender.com/api/search?query=${encodeURIComponent(query)}`
+        `https://walmart-scraper-latest.onrender.com/api/search?query=${encodeURIComponent(
+          query
+        )}`
       );
       if (!response.ok) return undefined;
       const data = await response.json();
@@ -695,6 +748,58 @@ function ChatbotContent() {
   }
 
   const isAuthenticated = status === "authenticated";
+  const formatBotResponse = (text: string) => {
+    // Convert markdown bold **text** to HTML strong tags
+    let formattedText = text.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+
+    // Convert markdown italics *text* to HTML em tags
+    formattedText = formattedText.replace(/\*(.*?)\*/g, "<em>$1</em>");
+
+    // Convert bullet points to HTML lists (handles single line items)
+    formattedText = formattedText.replace(/^\* (.*$)/gm, "<li>$1</li>");
+
+    // Convert numbered lists (handles single line items)
+    formattedText = formattedText.replace(/^\d+\. (.*$)/gm, "<li>$1</li>");
+
+    // Add line breaks for paragraphs
+    formattedText = formattedText.replace(/\n\n/g, "<br /><br />");
+
+    // Handle lists by first grouping list items
+    const lines = formattedText.split("\n");
+    let inList = false;
+    let listItems: string[] = [];
+
+    const processedLines = lines.map((line) => {
+      if (line.startsWith("<li>")) {
+        if (!inList) {
+          inList = true;
+        }
+        listItems.push(line);
+        return "";
+      } else {
+        if (inList) {
+          inList = false;
+          const listHtml = `<ul class="list-disc pl-5">${listItems.join(
+            ""
+          )}</ul>`;
+          listItems = [];
+          return listHtml + "\n" + line;
+        }
+        return line;
+      }
+    });
+
+    // Join any remaining list items
+    if (listItems.length > 0) {
+      processedLines.push(
+        `<ul class="list-disc pl-5">${listItems.join("")}</ul>`
+      );
+    }
+
+    formattedText = processedLines.join("\n");
+
+    return formattedText;
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900  to-black text-white flex flex-col">
@@ -869,6 +974,17 @@ function ChatbotContent() {
                     message.sender === "user" ? "flex-row-reverse" : "flex-row"
                   }`}
                 >
+                  {message.imageUrl && (
+                    <div className="mt-2">
+                      <Image
+                        src={message.imageUrl}
+                        alt="Product image"
+                        width={200}
+                        height={200}
+                        className="rounded-lg max-h-40 object-contain"
+                      />
+                    </div>
+                  )}
                   <div
                     className={`rounded-2xl px-4 py-3 ${
                       message.sender === "user" ? "bg-blue-600" : "bg-gray-700"
@@ -880,7 +996,15 @@ function ChatbotContent() {
                       message.products.length > 0 && (
                         <ProductCarousel products={message.products} />
                       )}
-                    <p className="text-sm leading-relaxed">{message.text}</p>
+                    <div
+                      className="text-sm leading-relaxed"
+                      dangerouslySetInnerHTML={{
+                        __html:
+                          message.sender === "bot"
+                            ? formatBotResponse(message.text)
+                            : message.text,
+                      }}
+                    />
                     <p className="text-xs opacity-70 mt-1">
                       {message.timestamp.toLocaleTimeString([], {
                         hour: "2-digit",
@@ -913,8 +1037,45 @@ function ChatbotContent() {
         </div>
 
         {/* Input Area */}
+        {/* Input Area */}
         <div className="bg-gray-800 rounded-2xl p-4 border border-gray-700">
+          {/* Image preview */}
+          {imagePreview && (
+            <div className="relative mb-3">
+              <Image
+                src={imagePreview}
+                alt="Selected product"
+                width={200}
+                height={200}
+                className="rounded-lg max-h-40 object-contain"
+              />
+              <button
+                onClick={removeSelectedImage}
+                className="absolute top-1 right-1 bg-red-500 rounded-full p-1"
+              >
+                <X className="w-3 h-3 text-white" />
+              </button>
+            </div>
+          )}
+
           <div className="flex items-center gap-3">
+            {/* Hidden file input */}
+            <input
+              type="file"
+              id="image-upload"
+              accept="image/*"
+              onChange={handleImageUpload}
+              className="hidden"
+              disabled={isLoading}
+            />
+            <label
+              htmlFor="image-upload"
+              className="p-3 rounded-full bg-gray-600 hover:bg-gray-500 text-gray-300 cursor-pointer"
+              title="Upload product image"
+            >
+              <Camera className="w-5 h-5" />
+            </label>
+
             <input
               type="text"
               placeholder={
@@ -954,7 +1115,7 @@ function ChatbotContent() {
 
             <button
               onClick={handleSendMessage}
-              disabled={!inputValue.trim() || isLoading}
+              disabled={(!inputValue.trim() && !selectedImage) || isLoading}
               className="p-3 rounded-full bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-600 disabled:text-gray-400"
             >
               <Send className="w-5 h-5" />
